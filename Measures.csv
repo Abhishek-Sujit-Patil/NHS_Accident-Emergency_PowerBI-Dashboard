@@ -1,0 +1,88 @@
+ID,TableID,Name,Description,DataType,Expression,FormatString,IsHidden,State,ModifiedTime,StructureModifiedTime,KPIID,IsSimpleMeasure,ErrorMessage,DisplayFolder,DetailRowsDefinitionID,DataCategory,LineageTag,SourceLineageTag
+2484,2407,"Breach Rate Quartile Band","",2,"
+VAR _Rank = RANKX(ALLSELECTED('A&E_Quarterly'), [Breach Rate], , ASC, Dense)
+VAR _Total = COUNTROWS(ALLSELECTED('A&E_Quarterly'))
+RETURN
+    SWITCH(
+        TRUE(),
+        _Rank <= _Total / 4, ""Top Quartile"",
+        _Rank <= _Total / 2, ""2nd Quartile"",
+        _Rank <= _Total * 3/4, ""3rd Quartile"",
+        ""Bottom Quartile""
+    )","",False,1,2025-08-13 12:11:39.846,2025-06-24 11:21:52.303,,False,"","",,"","e927abcd-a8e7-4721-8bc8-8c387435ad42",""
+2486,2407,"Breach Rate","",8,"AVERAGE('A&E_Quarterly'[breach_rate])","0.0%;-0.0%;0.0%",False,1,2025-08-13 12:11:39.846,2025-06-24 11:30:19.446,,False,"","",,"","7f5c5c4a-9257-4094-83a8-80770c9df7aa",""
+2489,2407,"Breach Rate Z-Score","",8,"
+VAR _Avg = AVERAGEX(ALL('A&E_Quarterly'), [Breach Rate])
+VAR _StDev = STDEVX.P(ALL('A&E_Quarterly'), [Breach Rate])
+RETURN
+    DIVIDE(([Breach Rate] - _Avg), _StDev)","",False,1,2025-08-13 12:11:39.846,2025-06-24 12:06:44.490,,False,"","",,"","72abe65b-f7ca-4617-b4db-5a26b32b3af0",""
+4175,2407,"Total_AE_Attendances","",6,"
+SUM('A&E_Quarterly'[total_attendances])","#,0",False,1,2025-08-13 12:11:39.846,2025-07-07 00:45:13.036,,False,"","",,"","de026f55-bf38-4fc3-afc7-b7a7502013f0",""
+4184,2407,"Avg_BreachRate_PreviousQuarter","",8,"
+VAR CurrentYear = MAX('A&E_Quarterly'[Corrected Year])
+VAR CurrentQuarter = MAX('A&E_Quarterly'[Quarter])
+
+VAR PrevQuarter = IF(CurrentQuarter = 1, 4, CurrentQuarter - 1)
+VAR PrevYear = IF(CurrentQuarter = 1, CurrentYear - 1, CurrentYear)
+
+RETURN
+CALCULATE(
+    AVERAGE('A&E_Quarterly'[breach_rate]),
+    'A&E_Quarterly'[Corrected Year] = PrevYear,
+    'A&E_Quarterly'[Quarter] = PrevQuarter
+)","0%;-0%;0%",False,1,2025-08-13 12:11:39.846,2025-07-07 09:13:30.456,,False,"","",,"","874f172d-c779-4000-a232-6c3348d011bf",""
+4189,2407,"Previous Breach Rate","",8,"
+VAR CurrentYear = SELECTEDVALUE('A&E_Quarterly'[Corrected Year])
+VAR CurrentQuarter = SELECTEDVALUE('A&E_Quarterly'[Quarter])
+
+VAR PrevQuarter = IF(CurrentQuarter = 1, 4, CurrentQuarter - 1)
+VAR PrevYear = IF(CurrentQuarter = 1, CurrentYear - 1, CurrentYear)
+
+RETURN
+CALCULATE(
+    AVERAGE('A&E_Quarterly'[breach_rate]),
+    'A&E_Quarterly'[Corrected Year] = PrevYear,
+    'A&E_Quarterly'[Quarter] = PrevQuarter,
+    ALLEXCEPT('A&E_Quarterly', 'A&E_Quarterly'[Trust_Code])
+)","",False,1,2025-08-13 12:11:39.846,2025-07-07 09:19:59.616,,False,"","",,"","4f712647-3540-4fbf-833d-aeacf9ea1574",""
+4578,2407,"Breach_Rate_Rank_Display","",6,"
+MAX('A&E_Quarterly'[Breach_Rate_Rank_Qtr])","0",False,1,2025-08-13 12:11:39.846,2025-07-11 00:07:37.946,,False,"","",,"","08dd821e-8904-411e-9afd-c3eb595620cb",""
+4664,2407,"Total_Trusts_in_Context","",6,"
+CALCULATE(
+    DISTINCTCOUNT('A&E_Quarterly'[Trust_Code]),
+    'A&E_Quarterly'[Quarter] = MAX('A&E_Quarterly'[Quarter]) &&
+    'A&E_Quarterly'[Corrected Year] = MAX('A&E_Quarterly'[Corrected Year])
+)","0",False,1,2025-08-13 12:11:39.846,2025-07-11 00:38:46.406,,False,"","",,"","57c2d017-d9e9-4a11-ad6f-e9e2137bfefa",""
+4724,2407,"Attendance_Rank_Display","",6,"MAX('A&E_Quarterly'[Attendance_Rank_Qtr])","0",False,1,2025-08-13 12:11:39.846,2025-07-11 01:30:10.230,,False,"","",,"","3fe898de-317a-47b2-8444-9f87d8fd0cf3",""
+4780,2407,"Total_AE_Attendances_Region","",6,"
+CALCULATE(
+    [Total_AE_Attendances],
+    VALUES(Trust_Lookup[Region])
+)","#,0",False,1,2025-08-11 18:38:23.796,2025-07-15 12:59:07.066,,False,"","",,"","ad63a16a-7b9d-4965-a53b-c193ff9d1bdf",""
+4782,2407,"Breach_Rate_Band","",2,"
+SWITCH(TRUE(),
+    [Breach Rate] >= 0.4, ""High (≥40%)"",
+    [Breach Rate] >= 0.3, ""Medium (30–39%)"",
+    ""Low (<30%)""
+)","",False,1,2025-07-15 13:00:11.706,2025-07-15 13:00:00.166,,False,"","",,"","5e452bbd-df9f-4ea2-aa86-bec3e0d80e89",""
+5009,2407,"Breach_Rate_Region","",8,"
+DIVIDE(
+    CALCULATE([Total_Breaches], VALUES(Trust_Lookup[Region])),
+    CALCULATE([Total_AE_Attendances], VALUES(Trust_Lookup[Region]))
+)","0%;-0%;0%",False,1,2025-08-11 18:36:45.083,2025-07-17 22:55:50.003,,False,"","",,"","88b284df-1340-455f-a741-78c10944ae39",""
+5011,2407,"Total_Breaches","",6,"SUM('A&E_Quarterly'[total_breaches])","0",False,1,2025-08-13 12:11:39.846,2025-07-17 22:59:06.070,,False,"","",,"","3b14f5e5-4252-4151-976a-9c0134a242ea",""
+5380,2407,"Occupancy_Rate_GNA","",8,"
+DIVIDE(
+    SUM('Beds_Availability&Occupancy'[General_and_Acute_Occupied]),
+    SUM('Beds_Availability&Occupancy'[General_and_Acute_Avail])
+)","0%;-0%;0%",False,1,2025-08-13 12:17:06.026,2025-07-23 08:31:26.130,,False,"","",,"","c3dba0ad-df87-4aac-9212-088b2b0e4fc8",""
+9812,2407,"// base totals (use your real columns)Total_Breaches","",6,"","",False,1,2025-08-11 09:59:06.013,2025-08-11 09:57:47.850,,False,"","",,"","001b55e8-f703-4c92-905e-3e83f6deaca0",""
+9814,2407,"Breach Rate (Totals Eval)","",6,"","",False,1,2025-08-11 10:21:28.176,2025-08-11 10:00:03.550,,False,"","",,"","ab19fdd6-c0a3-4bba-acfb-54ad9b62aa91",""
+15289,2407,"DimDate_IsUnique","",11,"
+VAR d =
+    SUMX (
+        SUMMARIZE ( DimDate1, DimDate1[Trust_Quarter_ID] ),
+        1
+    )
+RETURN
+d = DISTINCTCOUNT ( DimDate1[Trust_Quarter_ID] )","""TRUE"";""TRUE"";""FALSE""",False,1,2025-08-15 22:01:56.846,2025-08-15 22:01:53.480,,False,"","",,"","72e972f6-ed53-4022-99e5-1bebc68e2f60",""
