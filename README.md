@@ -3,11 +3,6 @@
 This project showcases an end-to-end **Power BI data analytics solution** using publicly available **NHS Accident & Emergency (A&E) performance** and **hospital bed availability/occupancy** datasets.  
 The goal is to explore trust-level resilience under operational pressure through **data prep, modelling, and interactive dashboards**.
 
-
-## Dashboard Preview  
-
-![Dashboard Overview](images/dashboard_overview.png)  
-*Trust-level A&E performance and bed occupancy trends in Power BI*  
 ---
 
 ## Key Highlights
