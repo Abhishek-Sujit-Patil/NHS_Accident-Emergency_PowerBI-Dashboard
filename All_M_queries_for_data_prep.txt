@@ -1,0 +1,242 @@
+// =====================================================================
+// bundle_all_queries.pq
+// One file containing:
+//   1) Parameter: Beds_FilePath
+//   2) Parameter: AE_FolderPath
+//   3) Query:     Beds_KH03
+//   4) Query:     AE_Attendances
+//
+// HOW TO IMPORT (Power BI Desktop):
+//   A. Parameters (do these first)
+//      - Transform Data → New Source → Blank Query → Advanced Editor
+//      - Paste the Beds_FilePath block ONLY → Done
+//      - Right-click query → Rename to Beds_FilePath (it will be a parameter)
+//      - Repeat for AE_FolderPath
+//   B. Queries
+//      - New Source → Blank Query → Advanced Editor
+//      - Paste the Beds_KH03 block ONLY → Done → Rename to Beds_KH03
+//      - Repeat for AE_Attendances
+// =====================================================================
+
+
+
+// ======================== 1) PARAM: Beds_FilePath ======================
+/*
+Query name: Beds_FilePath   (Parameter)
+Type: Text
+Purpose: Full file path to the KH03 Beds Excel workbook.
+*/
+let
+    Source = "C:\Users\HP\OneDrive\Desktop\A&E Project\Beds_Open_Overnight_Quarter_Wise_data.xlsx"
+in
+    Source
+meta
+[
+    IsParameterQuery = true,
+    Type = "Text",
+    IsParameterQueryRequired = true,
+    Documentation.FieldDescription = "Full path to the KH03 Beds Excel workbook (overnight beds, quarterly)."
+]
+
+
+
+// ======================== 2) PARAM: AE_FolderPath ======================
+/*
+Query name: AE_FolderPath   (Parameter)
+Type: Text
+Purpose: Folder path that contains monthly A&E Excel files.
+*/
+let
+    Source = "C:\Users\HP\OneDrive\Desktop\A&E Project\A&E_Xlsx"
+in
+    Source
+meta
+[
+    IsParameterQuery = true,
+    Type = "Text",
+    IsParameterQueryRequired = true,
+    Documentation.FieldDescription = "Folder path with monthly A&E files (each contains 'Acute Trust Footprint Data' sheet)."
+]
+
+
+
+// ============================= 3) Beds_KH03 ============================
+/*
+Query name: Beds_KH03
+Source: KH03 Beds – Availability & Occupancy (Quarterly)
+Notes: Builds fast Code→LatestName lookup and Trust_Quarter_ID1 key (Code-Year-Q#).
+Depends on: Beds_FilePath
+*/
+let
+    // --- Source ---
+    Source = Excel.Workbook(File.Contents(Beds_FilePath), null, true),
+    Bed_cleaned_stacked_Sheet = Source{[Item = "Bed_cleaned_stacked", Kind = "Sheet"]}[Data],
+
+    // --- Headers & Types ---
+    #"Promoted Headers" = Table.PromoteHeaders(Bed_cleaned_stacked_Sheet, [PromoteAllScalars = true]),
+    #"Changed Type" = Table.TransformColumnTypes(
+        #"Promoted Headers",
+        {
+            {"Name", type text},
+            {"Sr.No", Int64.Type},
+            {"Year", Int64.Type},
+            {"Quarter", Int64.Type},
+            {"Period_End", type text},
+            {"Region_Code", type text},
+            {"Code", type text},
+            {"Org_Name", type text},
+            {"Total_Avail", type number},
+            {"General_and_Acute_Avail", type number},
+            {"Learning_Disabilities_Avail", Int64.Type},
+            {"Maternity_Avail", type number},
+            {"Mental_Illness_Avail", type number},
+            {"Total _Occupied", type number},
+            {"General_and_Acute_Occupied", type number},
+            {"Learning_Disabilities_Occupied", type number},
+            {"Maternity_Occupied", type number},
+            {"Mental_Illness_Occupied", type number},
+            {"Total _Percent_Occupied", type number},
+            {"General_and_Acute_Occupied_Percent", type number},
+            {"Learning_Disabilities_Occupied_Percent", type number},
+            {"Maternity_Occupied_Percent", type number},
+            {"Mental_Illness_Occupied_Percent", type number}
+        }
+    ),
+    Base = Table.Buffer(#"Changed Type"),
+
+    // --- Build fast Code -> LatestName lookup (by max Year) ---
+    Grouped = Table.Group(
+        Base,
+        {"Code"},
+        {{"Rows", each _, type table [Code = type text, Org_Name = type text, Year = Int64.Type]}}
+    ),
+    LatestPerCode = Table.AddColumn(
+        Grouped, "LatestName",
+        each
+            let
+                sorted = Table.Sort([Rows], {{"Year", Order.Descending}})
+            in
+                sorted{0}[Org_Name],
+        type text
+    ),
+    Lookup = Table.SelectColumns(LatestPerCode, {"Code", "LatestName"}),
+    KV = Table.RenameColumns(Lookup, {{"Code", "Name"}, {"LatestName", "Value"}}),
+    LatestNameRec = Record.FromTable(KV),
+
+    // --- Add LatestName + Trust_Quarter_ID key (Code-Year-Q#) ---
+    AddedLatest = Table.AddColumn(Base, "LatestName", each Record.FieldOrDefault(LatestNameRec, [Code]), type text),
+    #"Added Custom" = Table.AddColumn(AddedLatest, "Custom", each [Code] & "-" & Text.From([Year]) & "-Q" & Text.From([Quarter]), type text),
+    #"Renamed Columns" = Table.RenameColumns(#"Added Custom", {{"Custom", "Trust_Quarter_ID1"}})
+in
+    #"Renamed Columns"
+
+
+
+// ========================== 4) AE_Attendances ==========================
+/*
+Query name: AE_Attendances
+Source: A&E Attendances & 4-hour waits (Monthly) – “Acute Trust Footprint Data” sheet
+Notes: Normalises header rows by skipping/promoting; expands the expected columns.
+Depends on: AE_FolderPath
+*/
+let
+    // --- Folder Source ---
+    Source = Folder.Files(AE_FolderPath),
+
+    // For each file, pull the "Acute Trust Footprint Data" sheet (if present)
+    #"Added Footprint Sheet" =
+        Table.AddColumn(
+            Source,
+            "Acute_trusts_footprint_sheet",
+            each try Excel.Workbook([Content]){[Item = "Acute Trust Footprint Data", Kind = "Sheet"]}[Data] otherwise null
+        ),
+
+    // Normalise header rows (skip first 15, drop next 2, promote next row)
+    #"Normalized Tables" =
+        Table.AddColumn(
+            #"Added Footprint Sheet",
+            "Normalized",
+            each
+                let
+                    raw = [Acute_trusts_footprint_sheet],
+                    skipTop = if raw <> null then Table.Skip(raw, 15) else null,
+                    rowsAsList = if skipTop <> null then Table.ToRows(skipTop) else null,
+                    trimmed = if rowsAsList <> null then List.RemoveRange(rowsAsList, 1, 2) else null, // remove row index 1 and 2 (0-based)
+                    rebuilt = if trimmed <> null then Table.FromRows(trimmed) else null,
+                    promoted = if rebuilt <> null then Table.PromoteHeaders(rebuilt, [PromoteAllScalars = true]) else null
+                in
+                    promoted
+        ),
+
+    // Expand the normalized table columns (keep exactly the fields you listed)
+    #"Expanded Normalized" =
+        Table.ExpandTableColumn(
+            #"Normalized Tables",
+            "Normalized",
+            {
+                "Column1",
+                "Code",
+                "Region",
+                "Name",
+                "Type 1 Departments - Major A&E",
+                "Type 2 Departments - Single Specialty",
+                "Type 3 Departments - Other A&E/Minor Injury Unit",
+                "Total attendances",
+                "Type 1 Departments - Major A&E_1",
+                "Type 2 Departments - Single Specialty_2",
+                "Type 3 Departments - Other A&E/Minor Injury Unit_3",
+                "Total Attendances < 4 hours",
+                "Type 1 Departments - Major A&E_4",
+                "Type 2 Departments - Single Specialty_5",
+                "Type 3 Departments - Other A&E/Minor Injury Unit_6",
+                "Total Attendances > 4 hours",
+                "A&E attendances",
+                "A&E attendances > 4 hours",
+                "Percentage in 4 hours or less (type 1) before mapping",
+                "Percentage in 4 hours or less (all) before mapping",
+                "Percentage in 4 hours or less (all) with additional mapped activity",
+                "Column22",
+                "Column23",
+                "Column24",
+                "Column25",
+                "Column26",
+                "Column27",
+                "Column28",
+                "Column29",
+                "Column21"
+            },
+            {
+                "Column1",
+                "Code",
+                "Region",
+                "Name.1",
+                "Type 1 Departments - Major A&E",
+                "Type 2 Departments - Single Specialty_2",
+                "Type 3 Departments - Other A&E/Minor Injury Unit_3",
+                "Total attendances",
+                "Type 1 Departments - Major A&E_1",
+                "Type 2 Departments - Single Specialty_2",
+                "Type 3 Departments - Other A&E/Minor Injury Unit_3",
+                "Total Attendances < 4 hours",
+                "Type 1 Departments - Major A&E_4",
+                "Type 2 Departments - Single Specialty_5",
+                "Type 3 Departments - Other A&E/Minor Injury Unit_6",
+                "Total Attendances > 4 hours",
+                "A&E attendances",
+                "A&E attendances > 4 hours",
+                "Percentage in 4 hours or less (type 1) before mapping",
+                "Percentage in 4 hours or less (all) before mapping",
+                "Percentage in 4 hours or less (all) with additional mapped activity",
+                "Column22",
+                "Column23",
+                "Column24",
+                "Column25",
+                "Column26",
+                "Column27",
+                "Column28",
+                "Column29",
+                "Column21"
+            }
+        )
+in
+    #"Expanded Normalized"
